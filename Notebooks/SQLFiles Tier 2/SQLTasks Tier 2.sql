@@ -73,6 +73,7 @@ FROM Members
 INNER JOIN Bookings ON Members.memid = Bookings.memid
 INNER JOIN Facilities ON Bookings.facid = Facilities.facid
 WHERE Facilities.name like "Tennis Court%"
+ORDER BY member
 
 
 
@@ -82,15 +83,16 @@ different costs to members (the listed costs are per half-hour 'slot'), and
 the guest user's ID is always 0. Include in your output the name of the
 facility, the name of the member formatted as a single column, and the cost.
 Order by descending cost, and do not use any subqueries. */
-SELECT name, firstname, CASE WHEN firstname <> "GUEST" THEN membercost ELSE guestcost END AS cost
+SELECT name, firstname, CASE WHEN firstname <> "GUEST" THEN membercost*slots ELSE guestcost*slots END AS cost
 FROM Bookings
 INNER JOIN Facilities ON Bookings.facid = Facilities.facid
 INNER JOIN Members ON Bookings.memid = Members.memid
-WHERE (firstname <> "GUEST" AND membercost > 30) OR (firstname = "GUEST" AND guestcost > 30)
-AND starttime LIKE "2012-09-14%"
+WHERE (CASE WHEN firstname <> "GUEST" THEN membercost*slots ELSE guestcost*slots END)>30
+AND (starttime >= "2012-09-14" AND starttime < "2012-09-15")
+ORDER BY cost DESC
 
 /* Q9: This time, produce the same result as in Q8, but using a subquery. */
-SELECT f.name, m.firstname, CASE WHEN m.firstname <> "GUEST" THEN f.membercost ELSE f.guestcost END AS cost 
+SELECT f.name, m.firstname, CASE WHEN m.firstname <> "GUEST" THEN f.membercost*slots ELSE f.guestcost*slots END AS cost 
 FROM Bookings AS b
 
 JOIN (SELECT name, facid, membercost, guestcost
@@ -98,7 +100,9 @@ JOIN (SELECT name, facid, membercost, guestcost
 
 JOIN (SELECT firstname, memid 
       FROM Members) AS m ON m.memid = b.memid
-WHERE b.starttime LIKE "2012-09-14%"
+WHERE (b.starttime >= "2012-09-14" AND b.starttime < "2012-09-15")
+HAVING cost>30
+ORDER BY cost DESC
 
 /* PART 2: SQLite
 
@@ -109,35 +113,55 @@ QUESTIONS:
 /* Q10: Produce a list of facilities with a total revenue less than 1000.
 The output of facility name and total revenue, sorted by revenue. Remember
 that there's a different cost for guests and members! */
-SELECT firstname, name, monthlymaintenance, starttime, joindate,
+SELECT f.name,monthlymaintenance, starttime, joindate,
 	SUM(CASE WHEN firstname <> "GUEST"	
-	THEN membercost
-	ELSE guestcost
-		END)-monthlymaintenance AS total_cost
+			THEN membercost*slots END) 
+	+ 
+	SUM(CASE WHEN firstname = "GUEST"
+        	THEN guestcost*slots END)
+	-
+	monthlymaintenance AS total_cost
 FROM Bookings AS b
 LEFT JOIN Members AS m ON b.memid = m.memid
 LEFT JOIN Facilities AS f ON b.facid = f.facid
 GROUP BY name
-HAVING total_cost > 1000
+HAVING total_cost < 1000
+
 /* Q11: Produce a report of members and who recommended them in alphabetic surname,firstname order */
-SELECT m1.surname, m1.firstname
+SELECT m1.surname, m1.firstname, m2.surname, m2.firstname
 FROM Members AS m1
 	JOIN Members as m2
 	ON m1.memid = m2.recommendedby
 ORDER BY m1.surname, m1.firstname
 
+
 /* Q12: Find the facilities with their usage by member, but not guests */
-SELECT f1 . * , m1 . * , b . *
+SELECT f1.name, count(f1.name) AS bookings, m1.surname, m1.firstname
 FROM Bookings AS b
+
 JOIN (SELECT f.name, f.facid, f.membercost
 	FROM Facilities AS f) AS f1
 ON f1.facid = b.facid
 
-JOIN (SELECT m.firstname, m.memid
+JOIN (SELECT m.firstname, m.memid, m.surname
 	FROM Members AS m
 	WHERE m.firstname <> "GUEST") AS m1
 ON m1.memid = b.memid
-ORDER BY f1.name,b.starttime
+
+GROUP BY f1.name,m1.surname,m1.firstname
+ORDER BY f1.name,m1.surname,m1.firstname
 
 /* Q13: Find the facilities usage by month, but not guests */
+SELECT f.name,m.firstname,m.surname,
+count(f.name) as bookings,
+monthname(starttime) as month
 
+
+FROM Members m
+inner join Bookings bk on bk.memid = m.memid
+inner join Facilities f on f.facid = bk.facid
+where m.memid>0
+and year(starttime) = 2012
+
+group by f.name,m.firstname,m.surname, month(starttime)
+order by f.name,m.surname,m.firstname,month(starttime)
